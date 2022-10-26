@@ -4,7 +4,7 @@ import time
 
 
 sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id="9232804c01d545f785fcd7272b13b149",
-                                               client_secret="",
+                                               client_secret="b0822e578d0d42bdad79d9abd411a46c",
                                                redirect_uri="http://localhost:1234/callback",
                                                scope="user-top-read user-library-read user-read-private user-read-playback-state user-modify-playback-state playlist-modify-public playlist-modify-private playlist-read-collaborative playlist-read-private"))
 
