@@ -9,6 +9,9 @@ from tkinter import Tk, Canvas, Entry, Text, Button, PhotoImage, scrolledtext, \
     ttk
 import tkinter as tk
 
+## dittAudio recommender
+import dittAudio
+
 ## Spotify Libraries
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
@@ -16,7 +19,6 @@ from spotipy.oauth2 import SpotifyOAuth
 
 OUTPUT_PATH = Path(__file__).parent
 ASSETS_PATH = OUTPUT_PATH / Path("./assets")
-
 
 def relative_to_assets(path: str) -> Path:
     return ASSETS_PATH / Path(path)
@@ -49,16 +51,346 @@ def sp_connect():
       "user-read-recently-played",
       "streaming",
       "user-follow-modify"]
-    print('trying...')
+    print('Logging in...')
     sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id="9232804c01d545f785fcd7272b13b149",
                                                client_secret="2cd2359e600f408c9ebc277c1de304eb",
                                                redirect_uri="http://localhost:1234/callback",
                                                scope=" ".join(scp)),
                      requests_timeout=10, retries=10)
     writeStatus("[Info] Spotify API Latched to User: "+sp.me()['uri'])
-    print('done!')
-# =============================================================================
+    print('success!')
+    return sp
 
+def most_popular_tracks_from_artist(artistNames,n=10):
+    """Get n most popular track uris from a list of artist IDs"""
+    output = []
+    if n > 10 or n <= 0:
+        n = 10
+    for artist in artistNames:
+        query = sp.artist_top_tracks(artist)
+        idx = 0
+        while idx < n:
+            output.append(query['tracks'][idx]['uri'])
+            idx+=1
+    return output
+
+def write_to_step_2(audio_features):
+    """Writes af_summary dictionary to step 2"""
+    af_summary = audio_features[0] #dictionary of features
+    af_summary.pop('time_signature')
+    af_summary.pop('duration_ms')
+    af_summary.pop('analysis_url')
+    af_summary.pop('track_href')
+    af_summary.pop('uri')
+    af_summary.pop('id')
+    af_summary.pop('type')
+    
+    for idx in range(1,len(audio_features)):
+        track = audio_features[idx]
+        af_summary['danceability']     += track['danceability']
+        af_summary['energy']           += track['energy']
+        af_summary['key']              += track['key']
+        af_summary['loudness']         += track['loudness']
+        af_summary['mode']             += track['mode']
+        af_summary['speechiness']      += track['speechiness']
+        af_summary['instrumentalness'] += track['instrumentalness']
+        af_summary['liveness']         += track['liveness']
+        af_summary['valence']          += track['valence']
+        af_summary['tempo']            += track['tempo']
+    af_summary['danceability']      = round(af_summary['danceability']/len(audio_features),5)
+    af_summary['energy']            = round(af_summary['energy']/len(audio_features),5)
+    af_summary['key']               = round(af_summary['key']/len(audio_features),0)
+    af_summary['loudness']          = round(af_summary['loudness']/len(audio_features),5)
+    af_summary['mode']              = round(af_summary['mode']/len(audio_features),0)
+    af_summary['speechiness']       = round(af_summary['speechiness']/len(audio_features),5)
+    af_summary['instrumentalness']  = round(af_summary['instrumentalness']/len(audio_features),5)
+    af_summary['liveness']          = round(af_summary['liveness']/len(audio_features),5)
+    af_summary['valence']           = round(af_summary['valence']/len(audio_features),5)
+    af_summary['tempo']             = round(af_summary['tempo']/len(audio_features),5)
+    
+    # populate into boxesstatus_window.delete(1.0,tk.END)
+    try:
+        # clear out any existing data
+        entry_1.delete(0,tk.END)
+        entry_2.delete(0,tk.END)
+        entry_3.delete(0,tk.END)
+        entry_7.delete(0,tk.END)
+        entry_14.delete(0,tk.END)
+        entry_15.delete(0,tk.END)
+        entry_16.delete(0,tk.END)
+        entry_17.delete(0,tk.END)
+    except:
+        print('[Warn] no data present')
+        None
+    entry_1.insert(tk.INSERT,str(af_summary['liveness']))
+    entry_2.insert(tk.INSERT,str(af_summary['valence']))    
+    entry_3.insert(tk.INSERT,str(af_summary['tempo']))
+    entry_7.insert(tk.INSERT,str(af_summary['danceability']))
+    entry_14.insert(tk.INSERT,str(af_summary['loudness']))
+    entry_15.insert(tk.INSERT,str(af_summary['speechiness']))
+    entry_16.insert(tk.INSERT,str(af_summary['acousticness']))
+    entry_17.insert(tk.INSERT,str(af_summary['energy']))
+    
+
+def write_to_recommendations(rec_query_resp):
+    """Writes a list of recommendations to step 3"""
+    global rec_tracks
+    rec_tracks = []
+    resp = []
+    
+    # populate into boxesstatus_window.delete(1.0,tk.END)
+    try:
+        # clear out any existing data
+        entry_13.delete(0,tk.END)
+        entry_8.delete(0,tk.END)
+        entry_9.delete(0,tk.END)
+        entry_10.delete(0,tk.END)
+        entry_11.delete(0,tk.END)
+        entry_12.delete(0,tk.END)
+    except:
+        None
+    # get track names and artist
+    try:
+        kyes = rec_query_resp['tracks']
+        for track in rec_query_resp['tracks']:
+            trackName = track['name']
+            trackArtist = track['artists'][0]['name']
+            data = trackName + ' - ' + trackArtist
+            resp.append(data)
+            rec_tracks.append(track['uri'])
+    except:
+        for uri in rec_query_resp.keys():
+            txt = rec_query_resp[uri].split('-')
+            trackName = txt[0]
+            trackArtist = txt[1]
+            data = trackName + ' - ' + trackArtist
+            resp.append(data)
+            rec_tracks.append(uri)
+    entry_13.insert(tk.INSERT,str(resp[0]))
+    entry_8.insert(tk.INSERT,str(resp[1]))    
+    entry_9.insert(tk.INSERT,str(resp[2]))
+    entry_10.insert(tk.INSERT,str(resp[3]))
+    entry_11.insert(tk.INSERT,str(resp[4]))
+    entry_12.insert(tk.INSERT,str(resp[5]))
+
+def get_artist_uris(artist_query):
+    """Takes a query response of artists and returns a list of artist uris"""
+    artistURIs = []
+    try:
+        for artist in artist_query['artists']['items']:
+            artistURIs.append(artist['uri'])
+    except:
+        print("Using Alt Structure for query response Artist")
+        for artist in artist_query['items']:
+            artistURIs.append(artist['uri'])
+    return artistURIs
+
+def use_my_followed_artists_function(retrn=False):
+    """ Uses followed artists' top 10 songs, generates averages for audio features,
+    and inputs them into step 2 for the user"""
+    global seed_choice
+    seed_choice = 'my_followed_artists'
+    
+    # Get followed artists, store URIs in a list
+    followed_artists = sp.current_user_followed_artists()
+    artistURIs = get_artist_uris(followed_artists)
+
+    all_tracks = most_popular_tracks_from_artist(artistURIs)
+    
+    if retrn:
+        return artistURIs
+    
+    # get all the audio features
+    features = sp.audio_features(all_tracks)
+    
+    write_to_step_2(features)
+    
+
+def use_my_top_artists_function(retrn=False):
+    """Gets audio features of top 10 artists, prints them into step 2"""
+    global seed_choice
+    seed_choice = 'my_top_artists'
+    
+    top_artists = sp.current_user_top_artists(limit=10, offset=0, time_range='medium_term')
+    artistURIs = get_artist_uris(top_artists)
+    
+    all_tracks = most_popular_tracks_from_artist(artistURIs)
+    
+    if retrn:
+        return artistURIs
+    
+    features = sp.audio_features(all_tracks)
+    
+    write_to_step_2(features)
+    
+def use_my_top_tracks_function(retrn=False):
+    """Gets audio features of top 50 tracks, prints them into step 2"""
+    global seed_choice
+    seed_choice = 'my_top_tracks'
+    
+    all_tracks = sp.current_user_top_tracks(limit=50, offset=0, time_range='medium_term')
+    # get track URIs
+    uris = []
+    for track in all_tracks['items']:
+        uris.append(track['uri'])
+    
+    if retrn:
+        return uris
+    
+    features = sp.audio_features(uris)
+    write_to_step_2(features)
+    
+    
+def load_next_six():
+    """Loads the next six recommendations based on which method was chosen"""
+    global rec_method
+    global sp_rec_offset
+    
+    if rec_method == '':
+        writeStatus("Need to select reccomendation method in step 2!!")
+        return
+    
+    sp_rec_offset += 6
+    
+    if rec_method == 'spotify':
+        spotify_recommend(sp_rec_offset)
+    elif rec_method == 'dittaudio':
+        dittaudio_recommend(sp_rec_offset)
+    
+def hipster_toggle():
+    """Toggles a max popularity setting for spotify recs"""
+    global hipster
+    if hipster:
+        hipster = False
+        writeStatus("Hipster Mode Disabled!")  
+    else:
+        hipster = True
+        writeStatus("Hipster Mode Enabled!")    
+    
+def spotify_recommend(offset=0):
+    """Uses spotify recommendation algo to recommend songs"""
+    global sp_rec_offset
+    global seed_choice
+    global rec_method
+    global hipster
+    
+    rec_method = 'spotify'
+    
+    if offset==0:
+        sp_rec_offset=0
+    
+    if hipster:
+        mp = 10
+    else:
+        mp = 100
+    
+    if seed_choice == '':
+        writeStatus("Need to select seed method!")
+        return
+    elif seed_choice == 'my_followed_artists':
+        recs = sp.recommendations(limit=6,seed_artists=use_my_followed_artists_function(True)[0:4],offset=offset+sp_rec_offset,max_popularity=mp)
+    elif seed_choice == 'my_top_tracks':
+        recs = sp.recommendations(limit=6,seed_tracks=use_my_top_tracks_function(True)[0:4],offset=offset+sp_rec_offset,max_popularity=mp)
+    elif seed_choice == 'my_top_artists':
+        recs = sp.recommendations(limit=6,seed_artists=use_my_top_artists_function(True)[0:4],offset=offset+sp_rec_offset,max_popularity=mp)
+    write_to_recommendations(recs)
+
+def dittaudio_recommend(offset=0):
+    """Uses dittAudio recommendation algo to recommend songs"""
+    global sp_rec_offset
+    global seed_choice
+    global rec_method
+    
+    rec_method = 'dittaudio'
+    
+    if offset==0:
+        sp_rec_offset=0
+    
+    input_data = {}
+    input_data = get_existing_factors()
+    if input_data == {}:
+        writeStatus("[Error] Must fill in step 2!!!")
+        return
+    recs = dittAudio.recommend_songs(input_data,offset+6)
+    
+    write_to_recommendations(recs)
+
+
+def play_song(rec_num):
+    """ Plays the recommended song on users device """
+    global chosen_device
+    global rec_tracks
+    
+    if chosen_device == '':
+        devices = sp.devices()['devices']
+        for device in devices:
+            if device['type'] == 'Computer':
+                chosen_device = device['id']
+        if chosen_device == '':
+            writeStatus("[Error] No devices found that can play selection")
+    try:
+        sp.start_playback(chosen_device,uris=[rec_tracks[rec_num]])
+    except:
+        error_msg = "[Error] Could not play track on device: " + str(chosen_device)
+        writeStatus(error_msg)
+        
+def get_existing_factors():
+    """Gets all the parameters from step 2 and stores them into a dictionary"""
+    af_summary = {}
+    
+    af_summary['danceability']      = float(entry_7.get())
+    af_summary['energy']            = float(entry_17.get())
+    af_summary['loudness']          = float(entry_14.get())
+    af_summary['speechiness']       = float(entry_15.get())
+    af_summary['acousticness']      = float(entry_16.get())
+    # af_summary['instrumentalness']  = entry_1.get()
+    af_summary['liveness']          = float(entry_1.get())
+    af_summary['valence']           = float(entry_2.get())
+    af_summary['tempo']             = float(entry_3.get())
+    
+    return af_summary
+
+def add_to_playlist(rec_num):
+    """Gets the Text in the playlist entry, adds song to playlist. If playlist does not exist, it will make it"""
+    global rec_tracks
+    global user_playlists
+    global rec_method
+    
+    if rec_method == '':
+        writeStatus("Must get recommended songs first!")
+        return
+    
+    if user_playlists == []:
+        user_playlists = sp.user_playlists(sp.me()['id'],limit=50)['items']
+    
+    chosen_playlist = entry_4.get()
+    
+    if chosen_playlist == "":
+        writeStatus("[Error] Enter a playlist name!")
+        return
+    
+    selected_plist = ''
+    for plist in user_playlists:
+        if plist['name'] == chosen_playlist:
+            selected_plist = plist['id']
+    
+    if selected_plist == '':
+        # playlist didnt exist, lets make it
+        new_playlist = sp.user_playlist_create(sp.me()['id'], chosen_playlist,public=False,collaborative=False)
+        selected_plist = new_playlist['id']
+        user_playlists.append(new_playlist)
+    
+    # add the songs
+    sp.user_playlist_add_tracks(sp.me()['id'], selected_plist, [rec_tracks[rec_num]]) 
+       
+# =============================================================================
+seed_choice = ''
+sp_rec_offset = 0
+rec_tracks = []
+chosen_device = ''
+user_playlists = []
+rec_method = ''
+hipster = False
 
 window = Tk()
 
@@ -86,7 +418,7 @@ status_window = scrolledtext.ScrolledText(window,
                                           height=78,
                                           font = ("Inter",14))
 status_window.grid(column=0,pady=10,padx=10)
-status_window.insert(tk.INSERT,"FirstText!")
+status_window.insert(tk.INSERT,"Welcome to DittAudio")
 status_window.place(
     x=419.0,
     y=560.0,
@@ -121,12 +453,12 @@ canvas.create_rectangle(
     fill="#F9D5FF",
     outline="")
 
-entry_image_1 = PhotoImage(
-    file=relative_to_assets("entry_1.png"))
+factor_entry = PhotoImage(
+    file=relative_to_assets("factor_entry.png"))
 entry_bg_1 = canvas.create_image(
     652.5,
     314.5,
-    image=entry_image_1
+    image=factor_entry
 )
 entry_1 = Entry(
     bd=0,
@@ -140,12 +472,10 @@ entry_1.place(
     height=21.0
 )
 
-entry_image_2 = PhotoImage(
-    file=relative_to_assets("entry_2.png"))
 entry_bg_2 = canvas.create_image(
     652.5,
     338.5,
-    image=entry_image_2
+    image=factor_entry
 )
 entry_2 = Entry(
     bd=0,
@@ -159,12 +489,10 @@ entry_2.place(
     height=21.0
 )
 
-entry_image_3 = PhotoImage(
-    file=relative_to_assets("entry_3.png"))
 entry_bg_3 = canvas.create_image(
     652.5,
     362.5,
-    image=entry_image_3
+    image=factor_entry
 )
 entry_3 = Entry(
     bd=0,
@@ -186,23 +514,6 @@ canvas.create_rectangle(
     fill="#F9D5FF",
     outline="")
 
-canvas.create_text(
-    828.0,
-    477.0,
-    anchor="nw",
-    text="Device:",
-    fill="#6C007E",
-    font=("Inter", 20 * -1)
-)
-
-canvas.create_text(
-    847.0,
-    450.0,
-    anchor="nw",
-    text="Play this Playlist",
-    fill="#6C007E",
-    font=("Inter", 20 * -1)
-)
 
 canvas.create_text(
     828.0,
@@ -232,86 +543,19 @@ entry_4.place(
     height=21.0
 )
 
-entry_image_5 = PhotoImage(
-    file=relative_to_assets("entry_5.png"))
-entry_bg_5 = canvas.create_image(
-    1042.0,
-    489.5,
-    image=entry_image_5
-)
-entry_5 = Entry(
-    bd=0,
-    bg="#FFFFFF",
-    highlightthickness=0
-)
-entry_5.place(
-    x=898.0,
-    y=478.0,
-    width=288.0,
-    height=21.0
-)
-
-button_image_1 = PhotoImage(
-    file=relative_to_assets("button_1.png"))
-button_1 = Button(
-    image=button_image_1,
-    borderwidth=0,
-    highlightthickness=0,
-    command=lambda: print("button_1 clicked"),
-    relief="flat"
-)
-button_1.place(
-    x=846.0,
-    y=132.0,
-    width=328.0,
-    height=26.0
-)
-
 button_image_2 = PhotoImage(
-    file=relative_to_assets("button_2.png"))
-button_2 = Button(
+    file=relative_to_assets("next_6_recs.png"))
+next_6_recommendations_button = Button(
     image=button_image_2,
     borderwidth=0,
     highlightthickness=0,
-    command=lambda: print("button_2 clicked"),
+    command=lambda: load_next_six(),
     relief="flat"
 )
-button_2.place(
+next_6_recommendations_button.place(
     x=839.0,
     y=320.0,
     width=328.0,
-    height=26.0
-)
-
-button_image_3 = PhotoImage(
-    file=relative_to_assets("button_3.png"))
-button_3 = Button(
-    image=button_image_3,
-    borderwidth=0,
-    highlightthickness=0,
-    command=lambda: print("button_3 clicked"),
-    relief="flat"
-)
-button_3.place(
-    x=844.0,
-    y=510.0,
-    width=328.0,
-    height=26.0
-)
-
-button_image_4 = PhotoImage(
-    file=relative_to_assets("button_4.png"))
-button_4 = Button(
-    image=button_image_4,
-    borderwidth=0,
-    highlightthickness=0,
-    command=lambda: print("button_4 clicked"),
-    relief="flat"
-)
-button_4.place(
-    x=1006.0,
-    y=448.0,
-    width=203.0,
     height=26.0
 )
 
@@ -324,13 +568,16 @@ canvas.create_text(
     font=("Inter", 20 * -1)
 )
 
-button_image_5 = PhotoImage(
-    file=relative_to_assets("button_5.png"))
+play_button = PhotoImage(
+    file=relative_to_assets("play_button.png"))
+add_button = PhotoImage(
+    file=relative_to_assets("add_button.png"))
+
 button_5 = Button(
-    image=button_image_5,
+    image=play_button,
     borderwidth=0,
     highlightthickness=0,
-    command=lambda: print("button_5 clicked"),
+    command=lambda: play_song(5),
     relief="flat"
 )
 button_5.place(
@@ -340,13 +587,25 @@ button_5.place(
     height=24.0
 )
 
-button_image_6 = PhotoImage(
-    file=relative_to_assets("button_6.png"))
-button_6 = Button(
-    image=button_image_6,
+button_5a = Button(
+    image=add_button,
     borderwidth=0,
     highlightthickness=0,
-    command=lambda: print("button_6 clicked"),
+    command=lambda: add_to_playlist(5),
+    relief="flat"
+)
+button_5a.place(
+    x=1180.0,
+    y=287.0,
+    width=21.0,
+    height=24.0
+)
+
+button_6 = Button(
+    image=play_button,
+    borderwidth=0,
+    highlightthickness=0,
+    command=lambda: play_song(4),
     relief="flat"
 )
 button_6.place(
@@ -356,13 +615,25 @@ button_6.place(
     height=24.0
 )
 
-button_image_7 = PhotoImage(
-    file=relative_to_assets("button_7.png"))
-button_7 = Button(
-    image=button_image_7,
+button_6a = Button(
+    image=add_button,
     borderwidth=0,
     highlightthickness=0,
-    command=lambda: print("button_7 clicked"),
+    command=lambda: add_to_playlist(4),
+    relief="flat"
+)
+button_6a.place(
+    x=1180.0,
+    y=262.0,
+    width=21.0,
+    height=24.0
+)
+
+button_7 = Button(
+    image=play_button,
+    borderwidth=0,
+    highlightthickness=0,
+    command=lambda: play_song(3),
     relief="flat"
 )
 button_7.place(
@@ -372,17 +643,43 @@ button_7.place(
     height=24.0
 )
 
-button_image_8 = PhotoImage(
-    file=relative_to_assets("button_8.png"))
-button_8 = Button(
-    image=button_image_8,
+button_7a = Button(
+    image=add_button,
     borderwidth=0,
     highlightthickness=0,
-    command=lambda: print("button_8 clicked"),
+    command=lambda: add_to_playlist(3),
+    relief="flat"
+)
+button_7a.place(
+    x=1180.0,
+    y=237.0,
+    width=21.0,
+    height=24.0
+)
+
+button_8 = Button(
+    image=play_button,
+    borderwidth=0,
+    highlightthickness=0,
+    command=lambda: play_song(2),
     relief="flat"
 )
 button_8.place(
     x=1156.0,
+    y=212.0,
+    width=21.0,
+    height=24.0
+)
+
+button_8a = Button(
+    image=add_button,
+    borderwidth=0,
+    highlightthickness=0,
+    command=lambda: add_to_playlist(2),
+    relief="flat"
+)
+button_8a.place(
+    x=1180.0,
     y=212.0,
     width=21.0,
     height=24.0
@@ -601,24 +898,6 @@ canvas.create_text(
 )
 
 canvas.create_text(
-    9.0,
-    353.0,
-    anchor="nw",
-    text="Lists artist names below, separate by +",
-    fill="#6C007E",
-    font=("Inter", 20 * -1)
-)
-
-canvas.create_text(
-    9.0,
-    503.0,
-    anchor="nw",
-    text="List seed playlist below",
-    fill="#6C007E",
-    font=("Inter", 20 * -1)
-)
-
-canvas.create_text(
     22.0,
     94.0,
     anchor="nw",
@@ -629,65 +908,49 @@ canvas.create_text(
 
 button_image_9 = PhotoImage(
     file=relative_to_assets("button_9.png"))
-button_9 = Button(
+use_my_followed_artists_button = Button(
     image=button_image_9,
     borderwidth=0,
     highlightthickness=0,
-    command=lambda: print("button_9 clicked"),
+    command=lambda: use_my_followed_artists_function(),
     relief="flat"
 )
-button_9.place(
+use_my_followed_artists_button.place(
     x=53.0,
-    y=192.0,
+    y=190.0,
     width=301.0,
     height=59.0
 )
 
 button_image_10 = PhotoImage(
     file=relative_to_assets("button_10.png"))
-button_10 = Button(
+use_my_top_tracks_button = Button(
     image=button_image_10,
     borderwidth=0,
     highlightthickness=0,
-    command=lambda: print("button_10 clicked"),
+    command=lambda: use_my_top_tracks_function(),
     relief="flat"
 )
-button_10.place(
+use_my_top_tracks_button.place(
     x=53.0,
-    y=289.0,
+    y=290.0,
     width=301.0,
     height=59.0
 )
 
 button_image_11 = PhotoImage(
     file=relative_to_assets("button_11.png"))
-button_11 = Button(
+use_my_top_artists_button = Button(
     image=button_image_11,
     borderwidth=0,
     highlightthickness=0,
-    command=lambda: print("button_11 clicked"),
+    command=lambda: use_my_top_artists_function(),
     relief="flat"
 )
-button_11.place(
-    x=46.0,
-    y=434.0,
+use_my_top_artists_button.place(
+    x=53.0,
+    y=390.0,
     width=301.0,
-    height=59.0
-)
-
-button_image_12 = PhotoImage(
-    file=relative_to_assets("button_12.png"))
-button_12 = Button(
-    image=button_image_12,
-    borderwidth=0,
-    highlightthickness=0,
-    command=lambda: print("button_12 clicked"),
-    relief="flat"
-)
-button_12.place(
-    x=59.0,
-    y=590.0,
-    width=282.0,
     height=59.0
 )
 
@@ -697,7 +960,7 @@ button_13 = Button(
     image=button_image_13,
     borderwidth=0,
     highlightthickness=0,
-    command=lambda: print("button_13 clicked"),
+    command=lambda: spotify_recommend(),
     relief="flat"
 )
 button_13.place(
@@ -713,7 +976,7 @@ button_14 = Button(
     image=button_image_14,
     borderwidth=0,
     highlightthickness=0,
-    command=lambda: print("button_14 clicked"),
+    command=lambda: dittaudio_recommend(0),
     relief="flat"
 )
 button_14.place(
@@ -729,7 +992,7 @@ button_15 = Button(
     image=button_image_15,
     borderwidth=0,
     highlightthickness=0,
-    command=lambda: print("button_15 clicked"),
+    command=lambda: hipster_toggle(),
     relief="flat"
 )
 button_15.place(
@@ -739,31 +1002,10 @@ button_15.place(
     height=59.0
 )
 
-entry_image_6 = PhotoImage(
-    file=relative_to_assets("entry_6.png"))
-entry_bg_6 = canvas.create_image(
-    199.5,
-    401.5,
-    image=entry_image_6
-)
-entry_6 = Entry(
-    bd=0,
-    bg="#FFFFFF",
-    highlightthickness=0
-)
-entry_6.place(
-    x=20.0,
-    y=384.0,
-    width=359.0,
-    height=33.0
-)
-
-entry_image_7 = PhotoImage(
-    file=relative_to_assets("entry_7.png"))
 entry_bg_7 = canvas.create_image(
     652.5,
     194.5,
-    image=entry_image_7
+    image=factor_entry
 )
 entry_7 = Entry(
     bd=0,
@@ -777,12 +1019,12 @@ entry_7.place(
     height=21.0
 )
 
-entry_image_8 = PhotoImage(
-    file=relative_to_assets("entry_8.png"))
+recommendation_entry = PhotoImage(
+    file=relative_to_assets("recommendation_entry.png"))
 entry_bg_8 = canvas.create_image(
     1008.0,
     199.5,
-    image=entry_image_8
+    image=recommendation_entry
 )
 entry_8 = Entry(
     bd=0,
@@ -796,12 +1038,10 @@ entry_8.place(
     height=21.0
 )
 
-entry_image_9 = PhotoImage(
-    file=relative_to_assets("entry_9.png"))
 entry_bg_9 = canvas.create_image(
     1008.0,
     224.5,
-    image=entry_image_9
+    image=recommendation_entry
 )
 entry_9 = Entry(
     bd=0,
@@ -815,12 +1055,10 @@ entry_9.place(
     height=21.0
 )
 
-entry_image_10 = PhotoImage(
-    file=relative_to_assets("entry_10.png"))
 entry_bg_10 = canvas.create_image(
     1008.0,
     249.5,
-    image=entry_image_10
+    image=recommendation_entry
 )
 entry_10 = Entry(
     bd=0,
@@ -834,12 +1072,10 @@ entry_10.place(
     height=21.0
 )
 
-entry_image_11 = PhotoImage(
-    file=relative_to_assets("entry_11.png"))
 entry_bg_11 = canvas.create_image(
     1008.0,
     274.5,
-    image=entry_image_11
+    image=recommendation_entry
 )
 entry_11 = Entry(
     bd=0,
@@ -853,12 +1089,10 @@ entry_11.place(
     height=21.0
 )
 
-entry_image_12 = PhotoImage(
-    file=relative_to_assets("entry_12.png"))
 entry_bg_12 = canvas.create_image(
     1008.0,
     299.5,
-    image=entry_image_12
+    image=recommendation_entry
 )
 entry_12 = Entry(
     bd=0,
@@ -872,12 +1106,10 @@ entry_12.place(
     height=21.0
 )
 
-entry_image_13 = PhotoImage(
-    file=relative_to_assets("entry_13.png"))
 entry_bg_13 = canvas.create_image(
     1008.0,
     174.5,
-    image=entry_image_13
+    image=recommendation_entry
 )
 entry_13 = Entry(
     bd=0,
@@ -891,12 +1123,10 @@ entry_13.place(
     height=21.0
 )
 
-entry_image_14 = PhotoImage(
-    file=relative_to_assets("entry_14.png"))
 entry_bg_14 = canvas.create_image(
     652.5,
     242.5,
-    image=entry_image_14
+    image=factor_entry
 )
 entry_14 = Entry(
     bd=0,
@@ -910,12 +1140,10 @@ entry_14.place(
     height=21.0
 )
 
-entry_image_15 = PhotoImage(
-    file=relative_to_assets("entry_15.png"))
 entry_bg_15 = canvas.create_image(
     652.5,
     266.5,
-    image=entry_image_15
+    image=factor_entry
 )
 entry_15 = Entry(
     bd=0,
@@ -929,12 +1157,10 @@ entry_15.place(
     height=21.0
 )
 
-entry_image_16 = PhotoImage(
-    file=relative_to_assets("entry_16.png"))
 entry_bg_16 = canvas.create_image(
     652.5,
     290.5,
-    image=entry_image_16
+    image=factor_entry
 )
 entry_16 = Entry(
     bd=0,
@@ -948,12 +1174,10 @@ entry_16.place(
     height=21.0
 )
 
-entry_image_17 = PhotoImage(
-    file=relative_to_assets("entry_17.png"))
 entry_bg_17 = canvas.create_image(
     652.5,
     218.5,
-    image=entry_image_17
+    image=factor_entry
 )
 entry_17 = Entry(
     bd=0,
@@ -967,32 +1191,11 @@ entry_17.place(
     height=21.0
 )
 
-entry_image_18 = PhotoImage(
-    file=relative_to_assets("entry_18.png"))
-entry_bg_18 = canvas.create_image(
-    196.5,
-    553.5,
-    image=entry_image_18
-)
-entry_18 = Entry(
-    bd=0,
-    bg="#FFFFFF",
-    highlightthickness=0
-)
-entry_18.place(
-    x=17.0,
-    y=536.0,
-    width=359.0,
-    height=33.0
-)
-
-button_image_16 = PhotoImage(
-    file=relative_to_assets("button_16.png"))
 button_16 = Button(
-    image=button_image_16,
+    image=play_button,
     borderwidth=0,
     highlightthickness=0,
-    command=lambda: print("button_16 clicked"),
+    command=lambda: play_song(0),
     relief="flat"
 )
 button_16.place(
@@ -1001,14 +1204,25 @@ button_16.place(
     width=21.0,
     height=24.0
 )
-
-button_image_17 = PhotoImage(
-    file=relative_to_assets("button_17.png"))
-button_17 = Button(
-    image=button_image_17,
+button_16a = Button(
+    image=add_button,
     borderwidth=0,
     highlightthickness=0,
-    command=lambda: print("button_17 clicked"),
+    command=lambda: add_to_playlist(0),
+    relief="flat"
+)
+button_16a.place(
+    x=1180.0,
+    y=161.0,
+    width=21.0,
+    height=24.0
+)
+
+button_17 = Button(
+    image=play_button,
+    borderwidth=0,
+    highlightthickness=0,
+    command=lambda: play_song(1),
     relief="flat"
 )
 button_17.place(
@@ -1017,5 +1231,24 @@ button_17.place(
     width=21.0,
     height=24.0
 )
+button_17a = Button(
+    image=add_button,
+    borderwidth=0,
+    highlightthickness=0,
+    command=lambda: add_to_playlist(1),
+    relief="flat"
+)
+button_17a.place(
+    x=1180.0,
+    y=187.0,
+    width=21.0,
+    height=24.0
+)
+
+# connect to spotify after gui is built
+sp = sp_connect()
+dittAudio = dittAudio.dittAudio(sp)
 window.resizable(False, False)
+
+# start the main loop
 window.mainloop()
