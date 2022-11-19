@@ -889,15 +889,6 @@ canvas.create_text(
 )
 
 canvas.create_text(
-    419.0,
-    46.0,
-    anchor="nw",
-    text="Any *Get* buttons will return an output to the Status Box",
-    fill="#F9D5FF",
-    font=("Inter", 20 * -1)
-)
-
-canvas.create_text(
     22.0,
     94.0,
     anchor="nw",
